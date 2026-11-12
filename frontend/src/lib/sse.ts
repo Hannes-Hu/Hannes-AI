@@ -33,9 +33,7 @@ export async function parseSSEStream(
         try {
           const event = JSON.parse(payload) as StreamEvent;
           onEvent(event);
-        } catch {
-          // Skip malformed chunk
-        }
+        } catch {}
       }
     }
   } catch (err) {

@@ -17,14 +17,14 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Hannes AI — RAG-Plattform",
   description:
-    "Stelle präzise Fragen zu deinen Dokumenten mit KI-gestützter Hybrid-Suche und exakten Quellenangaben.",
+    "Präzise Frage-Antwort-Plattform mit lokaler Hybrid-Suche, Cross-Encoder Re-Ranking und exakter Quellenattribution.",
   keywords: ["RAG", "KI", "Dokumente", "PDF", "Enterprise"],
   authors: [{ name: "Hannes AI" }],
-  robots: "noindex, nofollow", // Portfolio-Projekt
+  robots: "noindex, nofollow",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#020617",
+  themeColor: "#0a0a0a",
   width: "device-width",
   initialScale: 1,
 };
@@ -37,9 +37,10 @@ export default function RootLayout({
   return (
     <html
       lang="de"
-      className={`${inter.variable} ${jetbrainsMono.variable}`}
+      className={`dark ${inter.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
     >
-      <body className="font-sans antialiased bg-slate-950 text-slate-200">
+      <body className="font-sans antialiased bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 transition-colors duration-150">
         {children}
       </body>
     </html>

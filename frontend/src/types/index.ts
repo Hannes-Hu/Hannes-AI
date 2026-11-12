@@ -67,3 +67,22 @@ export interface ChatMessage {
   error?: string;
   timestamp: Date;
 }
+
+export interface ChatSession {
+  id: string;
+  title: string | null;
+  created_at: string;
+}
+
+export interface SessionMessage {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant";
+  content: string;
+  sources: Source[];
+  created_at: string;
+}
+
+export interface SessionWithMessages extends ChatSession {
+  messages: SessionMessage[];
+}

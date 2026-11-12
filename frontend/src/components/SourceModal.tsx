@@ -38,40 +38,40 @@ export function SourceModal({ source, onClose }: SourceModalProps) {
       aria-labelledby="source-modal-title"
     >
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/50 dark:bg-black/75 backdrop-blur-sm"
         onClick={onClose}
         aria-hidden="true"
       />
 
       <div
         className={cn(
-          "relative z-10 w-full max-w-2xl rounded-2xl animate-slide-up",
-          "bg-slate-900 border border-slate-700/80 shadow-2xl shadow-black/60"
+          "relative z-10 w-full max-w-2xl rounded-2xl animate-slide-up shadow-2xl",
+          "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100"
         )}
       >
-        <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-700/60">
+        <div className="flex items-start justify-between gap-4 p-5 border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex-shrink-0 p-2 rounded-lg bg-brand-900/50 border border-brand-700/40">
-              <FileText className="h-5 w-5 text-brand-400" aria-hidden="true" />
+            <div className="flex-shrink-0 p-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+              <FileText className="h-5 w-5 text-zinc-700 dark:text-zinc-300" aria-hidden="true" />
             </div>
             <div className="min-w-0">
               <h2
                 id="source-modal-title"
-                className="text-sm font-semibold text-slate-100 truncate"
+                className="text-sm font-semibold truncate"
               >
                 {source.filename}
               </h2>
               <div className="flex items-center gap-3 mt-0.5">
-                <span className="flex items-center gap-1 text-xs text-slate-400">
+                <span className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <BookOpen className="h-3 w-3" aria-hidden="true" />
                   Seite {source.page_number}
                 </span>
-                <span className="flex items-center gap-1 text-xs text-slate-400">
+                <span className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <Hash className="h-3 w-3" aria-hidden="true" />
                   Chunk {source.chunk_index}
                 </span>
                 {source.relevance_score > 0 && (
-                  <span className="text-xs text-brand-400 font-medium">
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300 font-medium">
                     {Math.round(source.relevance_score * 100)}% Match
                   </span>
                 )}
@@ -80,7 +80,7 @@ export function SourceModal({ source, onClose }: SourceModalProps) {
           </div>
           <button
             onClick={onClose}
-            className="flex-shrink-0 p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
+            className="flex-shrink-0 p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
             aria-label="Modal schließen"
           >
             <X className="h-4 w-4" aria-hidden="true" />
@@ -88,13 +88,13 @@ export function SourceModal({ source, onClose }: SourceModalProps) {
         </div>
 
         <div className="p-5">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">
+          <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-3">
             Original-Textauszug
           </p>
           <blockquote
             className={cn(
-              "relative pl-4 text-sm text-slate-300 leading-relaxed",
-              "border-l-2 border-brand-600/70 font-mono bg-slate-800/40 rounded-r-lg p-4"
+              "relative pl-4 text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed",
+              "border-l-2 border-zinc-400 dark:border-zinc-600 font-mono bg-zinc-50 dark:bg-zinc-950/60 rounded-r-lg p-4"
             )}
           >
             {source.snippet}
@@ -102,8 +102,8 @@ export function SourceModal({ source, onClose }: SourceModalProps) {
         </div>
 
         <div className="px-5 pb-5">
-          <p className="text-xs text-slate-600">
-            Drücke <kbd className="px-1.5 py-0.5 text-xs font-mono bg-slate-800 border border-slate-700 rounded text-slate-400">ESC</kbd> zum Schließen.
+          <p className="text-xs text-zinc-400 dark:text-zinc-600">
+            Drücke <kbd className="px-1.5 py-0.5 text-xs font-mono bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded text-zinc-600 dark:text-zinc-400">ESC</kbd> zum Schließen.
           </p>
         </div>
       </div>

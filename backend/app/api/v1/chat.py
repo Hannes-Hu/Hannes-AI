@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-
 from app.core.config import SettingsDep
 from app.core.dependencies import LLMDep, VectorStoreDep
 from app.core.logging import get_logger
@@ -32,6 +32,9 @@ async def chat(
     vector_store: VectorStoreDep,
     llm: LLMDep,
 ) -> StreamingResponse:
+    target_session_id = request.session_id or request.conversation_id
+    logger.info("received_chat_request", session_id=target_session_id, question=request.question[:40])
+
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
             async for event in stream_rag_response(
@@ -39,6 +42,7 @@ async def chat(
                 vector_store=vector_store,
                 llm=llm,
                 settings=settings,
+                session_id=target_session_id,
             ):
                 yield event
         except Exception as exc:

@@ -1,6 +1,8 @@
 import type { Config } from "tailwindcss";
+import colors from "tailwindcss/colors";
 
 const config: Config = {
+  darkMode: "class",
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -9,19 +11,8 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Brand palette
-        brand: {
-          50:  "#eef2ff",
-          100: "#e0e7ff",
-          200: "#c7d2fe",
-          300: "#a5b4fc",
-          400: "#818cf8",
-          500: "#6366f1",
-          600: "#4f46e5",
-          700: "#4338ca",
-          800: "#3730a3",
-          900: "#312e81",
-        },
+        zinc: colors.neutral,
+        brand: colors.neutral,
       },
       fontFamily: {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
@@ -49,10 +40,18 @@ const config: Config = {
       typography: {
         DEFAULT: {
           css: {
-            "--tw-prose-body": "rgb(226 232 240)",
-            "--tw-prose-headings": "rgb(248 250 252)",
-            "--tw-prose-code": "rgb(167 139 250)",
-            "--tw-prose-pre-bg": "rgb(15 23 42)",
+            "--tw-prose-body": "rgb(64 64 64)",
+            "--tw-prose-headings": "rgb(23 23 23)",
+            "--tw-prose-links": "rgb(23 23 23)",
+            "--tw-prose-bold": "rgb(23 23 23)",
+            "--tw-prose-code": "rgb(64 64 64)",
+            "--tw-prose-pre-bg": "rgb(23 23 23)",
+            "--tw-prose-invert-body": "rgb(212 212 212)",
+            "--tw-prose-invert-headings": "rgb(245 245 245)",
+            "--tw-prose-invert-links": "rgb(245 245 245)",
+            "--tw-prose-invert-bold": "rgb(245 245 245)",
+            "--tw-prose-invert-code": "rgb(212 212 212)",
+            "--tw-prose-invert-pre-bg": "rgb(10 10 10)",
             maxWidth: "none",
           },
         },

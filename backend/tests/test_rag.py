@@ -135,7 +135,8 @@ class TestStreamRagResponse:
         mock_vector_store = MagicMock()
 
         with patch("app.services.rag.build_hybrid_retriever", new_callable=AsyncMock, return_value=mock_retriever):
-            with patch("app.services.rag.StrOutputParser"):
+            with patch("app.services.rag.rerank_documents", new_callable=AsyncMock, side_effect=lambda q, docs, top_k: docs):
+                with patch("app.services.rag.StrOutputParser"):
                 mock_chain = MagicMock()
 
                 async def fake_chain_stream(inp: dict) -> AsyncGenerator[str, None]:

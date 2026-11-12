@@ -6,7 +6,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import chat, upload
+from app.api.v1 import chat, sessions, upload
 from app.core.config import get_settings
 from app.core.dependencies import (
     build_embeddings,
@@ -15,6 +15,7 @@ from app.core.dependencies import (
     build_vector_store,
 )
 from app.core.logging import configure_logging, get_logger
+from app.db.database import init_db
 
 
 @asynccontextmanager
@@ -24,6 +25,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
 
     logger.info("application_startup", provider=settings.llm_provider, model=settings.llm_model)
+
+    await init_db()
 
     qdrant_client = build_qdrant_client(settings)
     embeddings = build_embeddings(settings)
@@ -65,6 +68,7 @@ def create_app() -> FastAPI:
 
     app.include_router(upload.router, prefix="/api/v1")
     app.include_router(chat.router, prefix="/api/v1")
+    app.include_router(sessions.router, prefix="/api/v1")
 
     @app.get("/health", tags=["Health"])
     async def health_check() -> dict[str, str]:

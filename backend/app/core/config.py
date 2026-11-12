@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = Field(default=50)
     allowed_extensions: str = Field(default="pdf")
 
+    reranker_model: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    reranker_top_k: int = Field(default=4)
+
     backend_host: str = Field(default="0.0.0.0")
     backend_port: int = Field(default=8000)
     log_level: str = Field(default="INFO")

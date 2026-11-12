@@ -26,15 +26,15 @@ export function MessageBubble({ message, onSourceClick }: MessageBubbleProps) {
         className={cn(
           "flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1",
           isAssistant
-            ? "bg-brand-800/60 border border-brand-700/50"
-            : "bg-slate-700/80 border border-slate-600/50"
+            ? "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800"
+            : "bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700"
         )}
         aria-hidden="true"
       >
         {isAssistant ? (
-          <Bot className="h-4 w-4 text-brand-300" />
+          <Bot className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
         ) : (
-          <User className="h-4 w-4 text-slate-300" />
+          <User className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
         )}
       </div>
 
@@ -48,16 +48,16 @@ export function MessageBubble({ message, onSourceClick }: MessageBubbleProps) {
           className={cn(
             "px-4 py-3 rounded-2xl text-sm leading-relaxed",
             isAssistant
-              ? "bg-slate-800/80 border border-slate-700/60 text-slate-200 rounded-tl-sm"
-              : "bg-brand-700/80 border border-brand-600/40 text-white rounded-tr-sm"
+              ? "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-tl-sm shadow-sm dark:shadow-none"
+              : "bg-zinc-900 dark:bg-zinc-100 text-zinc-100 dark:text-zinc-950 rounded-tr-sm"
           )}
         >
           {isAssistant ? (
             <>
               {message.error ? (
-                <p className="text-red-400">{message.error}</p>
+                <p className="text-red-500 dark:text-red-400">{message.error}</p>
               ) : (
-                <div className="prose prose-sm prose-invert max-w-none">
+                <div className="prose prose-sm dark:prose-invert max-w-none">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
@@ -66,7 +66,7 @@ export function MessageBubble({ message, onSourceClick }: MessageBubbleProps) {
                         return isBlock ? (
                           <code
                             className={cn(
-                              "block w-full overflow-x-auto p-3 rounded-lg bg-slate-900/80 text-violet-300 font-mono text-xs border border-slate-700/50",
+                              "block w-full overflow-x-auto p-3 rounded-lg bg-zinc-950 text-zinc-200 font-mono text-xs border border-zinc-800",
                               className
                             )}
                             {...props}
@@ -75,7 +75,7 @@ export function MessageBubble({ message, onSourceClick }: MessageBubbleProps) {
                           </code>
                         ) : (
                           <code
-                            className="px-1.5 py-0.5 rounded bg-slate-700/80 text-violet-300 font-mono text-xs"
+                            className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-mono text-xs border border-zinc-200 dark:border-zinc-700"
                             {...props}
                           >
                             {children}
@@ -88,7 +88,7 @@ export function MessageBubble({ message, onSourceClick }: MessageBubbleProps) {
                             href={href}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-brand-400 underline underline-offset-2 hover:text-brand-300"
+                            className="text-zinc-900 dark:text-zinc-100 underline underline-offset-2 hover:opacity-80"
                           >
                             {children}
                           </a>
@@ -126,7 +126,7 @@ export function MessageBubble({ message, onSourceClick }: MessageBubbleProps) {
         )}
 
         <time
-          className="text-xs text-slate-600 px-1 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="text-xs text-zinc-400 dark:text-zinc-600 px-1 opacity-0 group-hover:opacity-100 transition-opacity"
           dateTime={message.timestamp.toISOString()}
         >
           {message.timestamp.toLocaleTimeString("de-DE", {
@@ -148,7 +148,7 @@ function StreamingCursor() {
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse-dot"
+          className="h-1.5 w-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500 animate-pulse-dot"
           style={{ animationDelay: `${i * 0.16}s` }}
         />
       ))}

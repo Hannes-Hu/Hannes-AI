@@ -8,162 +8,174 @@
 [![Ollama](https://img.shields.io/badge/Ollama-Local_Inference-black.svg?logo=ollama&logoColor=white)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Hannes AI is a Retrieval-Augmented Generation (RAG) platform designed for reliable document question answering. It pairs dense vector search with sparse keyword search (BM25), streams model tokens via Server-Sent Events (SSE), and guarantees strict source attribution down to individual document chunks and page numbers.
+Hannes AI ist eine produktionsreife Enterprise Retrieval-Augmented Generation (RAG) Plattform für präzise Frage-Antwort-Systeme auf Basis von Dokumenten (PDFs). Sie kombiniert dichte Vektorsuche (Cosine) mit lexikalischer Keyword-Suche (BM25), wendet ein lokales Cross-Encoder Re-Ranking (`ms-marco-MiniLM-L-6-v2`) an, streamt Antworten Wort für Wort via Server-Sent Events (SSE) und persistiert Chat-Sitzungen und Quellenangaben in einer lokalen SQLite-Datenbank.
 
-The system supports both local offline inference via Ollama (`llama3` + `nomic-embed-text`) and cloud-hosted inference via OpenAI (`gpt-4o-mini` + `text-embedding-3-small`) through a dependency-injected provider architecture.
+Das System läuft zu 100 % lokal ohne externe Cloud-Abhängigkeiten (Ollama `llama3` + `nomic-embed-text`, lokaler Cross-Encoder, lokales Qdrant). Über Dependency Injection kann bei Bedarf nahtlos auf OpenAI gewechselt werden.
 
 ---
 
-## Architecture Overview
+## Architektur
 
 ```mermaid
 flowchart TD
-    subgraph Client["Frontend Layer (Next.js 14 App Router)"]
-        UI["Tailwind CSS Web Interface"]
-        UploadZone["Document Ingestion Manager"]
+    subgraph Client["Frontend Layer (Next.js 14 App Router / TypeScript)"]
+        Sidebar["Session-Verlauf (SessionSidebar: Neuer Chat)"]
+        UploadZone["Dokumenten-Manager (Drag & Drop)"]
         ChatInterface["Streaming Chat Interface"]
-        SourceModal["Source Verification Inspector"]
+        SourceModal["Quellen-Inspektor (Modal)"]
+        Theme["Theme Toggle (Dark / Light)"]
     end
 
     subgraph Gateway["API Layer (FastAPI)"]
         UploadEndpoint["POST /api/v1/upload"]
-        ChatEndpoint["POST /api/v1/chat (SSE)"]
+        ChatEndpoint["POST /api/v1/chat (SSE Stream)"]
+        SessionsEndpoint["GET/POST /api/v1/sessions"]
         HealthEndpoint["GET /health"]
     end
 
     subgraph Ingestion["Ingestion Engine"]
-        Parser["pypdf Stream Extraction"]
-        Chunker["RecursiveCharacterTextSplitter\n(1000 chars, 200 overlap)"]
-        Hasher["SHA-256 Idempotency Hash"]
+        Parser["pypdf Stream Extraktion"]
+        Chunker["RecursiveCharacterTextSplitter\n(1000 Chars, 200 Overlap)"]
+        Hasher["SHA-256 Idempotenz-Hash"]
     end
 
-    subgraph Retrieval["Hybrid RAG Pipeline"]
-        BM25["BM25 Keyword Search\n(Exact Term & Code Matching)"]
-        QdrantRetriever["Qdrant Vector Search\n(Cosine Similarity)"]
-        Ensemble["EnsembleRetriever\n(60% Vector, 40% BM25)"]
+    subgraph Retrieval["Hybrid RAG & Re-Ranking"]
+        BM25["BM25 Keyword Search\n(Exakte Fachbegriffe & IDs)"]
+        QdrantRetriever["Qdrant Vector Search\n(Semantische Ähnlichkeit)"]
+        Ensemble["EnsembleRetriever\n(60% Vektor, 40% BM25)"]
+        Reranker["Cross-Encoder Re-Ranking\n(ms-marco-MiniLM-L-6-v2 → Top 4)"]
         LCEL["LangChain LCEL Pipeline\nRunnablePassthrough | Prompt | LLM"]
     end
 
-    subgraph Persistence["Storage & Inference"]
-        Qdrant[("Qdrant Vector Database\n(Collection: hannes_chunks)")]
+    subgraph Persistence["Speicher & Inferenz"]
+        Qdrant[("Qdrant Vector DB\n(Collection: hannes_chunks)")]
+        SQLite[("SQLite DB (aiosqlite)\nSessions & Messages")]
         InferenceEngine["LLM Engine\n(Ollama / OpenAI)"]
     end
 
-    UploadZone -->|"Multipart PDF payload"| UploadEndpoint
-    UploadEndpoint --> Parser --> Chunker --> Hasher
-    Hasher -->|"Upsert vectors & metadata"| Qdrant
+    Sidebar -->|"Sessions laden & wechseln"| SessionsEndpoint
+    UploadZone -->|"PDF Multipart-Upload"| UploadEndpoint
+    UploadEndpoint --> Parser --> Chunker --> Hasher --> Qdrant
 
-    ChatInterface -->|"User Query (SSE)"| ChatEndpoint
+    ChatInterface -->|"Frage + session_id"| ChatEndpoint
     ChatEndpoint --> Ensemble
     Ensemble --> QdrantRetriever & BM25
     QdrantRetriever --> Qdrant
-    Ensemble -->|"Ranked context chunks"| LCEL
+    Ensemble -->|"Top K Chunks"| Reranker
+    Reranker -->|"Top 4 Re-Ranked Chunks"| LCEL
     LCEL --> InferenceEngine
-    InferenceEngine -->|"Token-by-token stream"| ChatInterface
-    LCEL -->|"Source attribution payload"| ChatInterface
-    ChatInterface -->|"Inspect chunk excerpt"| SourceModal
+    InferenceEngine -->|"Token Stream (SSE)"| ChatInterface
+    ChatEndpoint -->|"Verlauf persistieren"| SQLite
+    SessionsEndpoint --> SQLite
+    ChatInterface -->|"Quellen-Auszug ansehen"| SourceModal
 ```
 
 ---
 
-## Core Engineering Decisions
+## Zentrale technische Entscheidungen
 
-### 1. Hybrid Retrieval (BM25 + Dense Embeddings)
-Pure semantic vector retrieval frequently misses exact identifiers, product codes, or legal clause references that lack dense semantic clustering. Hannes solves this using an `EnsembleRetriever`:
-- **Dense Path:** `nomic-embed-text` (768-dim) or `text-embedding-3-small` (1536-dim) in Qdrant capturing semantic context.
-- **Sparse Path:** `rank_bm25` operating over the in-memory chunk corpus for exact lexical match.
-- **Weighted Fusion:** Linear reciprocal weighting (60% vector / 40% BM25) significantly reduces out-of-vocabulary hallucinations.
+### 1. Hybrid Retrieval & Lokales Cross-Encoder Re-Ranking
+Reine semantische Vektorsuche scheitert häufig bei exakten Artikelnummern, Paragraphen oder fachspezifischen Begriffen. Hannes AI löst dies zweistufig:
+- **Stufe 1 (Hybrid Retrieval):** `EnsembleRetriever` kombiniert dichte Embeddings (`nomic-embed-text`, 768-dim) in Qdrant mit sparse BM25 (`rank_bm25`).
+- **Stufe 2 (Cross-Encoder Re-Ranking):** Ein lokales HuggingFace Cross-Encoder Modell (`cross-encoder/ms-marco-MiniLM-L-6-v2` via `sentence-transformers`) bewertet jedes `(Frage, Textauszug)`-Paar gemeinsam und filtert die Top-6 Kandidaten auf die 4 relevantesten Abschnitte herunter.
 
-### 2. Idempotent Ingestion & Metadata Lineage
-Re-uploading modified or identical documents must not corrupt vector index state:
-- Each upload calculates a deterministic SHA-256 hash across filename and header bytes (`_compute_document_id`).
-- Before indexing new splits, existing points matching the `document_id` are purged from Qdrant.
-- Every chunk preserves strict lineage: `document_id`, `filename`, `page_number`, `chunk_index`, and character bounds.
+### 2. Chat-History & Asynchrone Persistenz
+- Speicherung aller Sessions und Nachrichten in SQLite über SQLAlchemy 2.0 (`aiosqlite`) mit `selectinload` und strikt typisierten Mappings (`Mapped[...]`, `mapped_column[...]`).
+- Historie wird beim Chatten automatisch in den System-Prompt injiziert (letzte Nachrichten), damit mehrstufige Rückfragen beantwortet werden können.
+- Automatische Titelgenerierung der Session anhand der ersten Benutzerfrage.
+- Saubere Session-Isolation: Neuer Chat wird per Klick auf **"Neuer Chat"** angelegt.
 
 ### 3. Server-Sent Events (SSE) Streaming & Source Attribution
-Rather than full duplex WebSockets, the chat endpoint implements unidirectional HTTP streaming (`text/event-stream`):
-- Eliminates stateful socket connection pools and simplifies load balancer routing.
-- Emits typed JSON frames:
-  - `{"type": "token", "content": "..."}`: Incremental token chunks.
-  - `{"type": "sources", "sources": [...]}`: Final attribution payload containing filename, page number, and original text snippet.
-  - `{"type": "done"}`: Clean stream termination.
+- Unidirektionales HTTP-Streaming (`text/event-stream`) anstelle fehleranfälliger WebSockets.
+- Typisierte JSON-Frames:
+  - `{"type": "token", "content": "..."}`: Inkrementelle Token-Generierung.
+  - `{"type": "sources", "sources": [...]}`: Strukturierte Quellenangaben mit Dateiname, Seitenzahl, Relevanzscore und Originaltext.
+  - `{"type": "done"}`: Sauberer Abschluss des Streams.
 
-### 4. Zero Cloud Vendor Lock-in (Local by Default)
-The platform defaults to running 100% locally with zero external network dependencies:
-- **LLM:** `llama3` running on Ollama.
-- **Embeddings:** `nomic-embed-text` running on Ollama.
-- **Vector DB:** Qdrant container running locally.
-- Switching to OpenAI requires only changing `LLM_PROVIDER=openai` in `.env`.
+### 4. 100 % Lokal & Vendor-agnostisch
+- **Standard:** Vollständig offline lauffähig mit Ollama (`llama3` + `nomic-embed-text`), Qdrant im Docker-Container und lokalem Cross-Encoder.
+- **Optional:** Umschaltbar auf OpenAI (`gpt-4o-mini` + `text-embedding-3-small`) durch einfaches Setzen von `LLM_PROVIDER=openai` in `.env`.
+
+### 5. Neutrales Schwarz-Grau UI mit Dark/Light Toggle
+- Konsequent gestaltetes Enterprise-Interface mit 3-Spalten-Layout (Chat-Verlauf, Dokumentenverwaltung, Chatbereich).
+- Achromatische Farbpalette (`neutral` ohne Blaustich) und Theme-Umschaltung mit Persistenz.
 
 ---
 
-## Directory Structure
+## Projektstruktur
 
 ```text
 hannes-ai/
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/
-│   │   │   ├── upload.py           # Ingestion router with validation & limits
-│   │   │   └── chat.py             # SSE streaming chat router
+│   │   │   ├── upload.py           # PDF Upload & Chunking Ingestion Router
+│   │   │   ├── chat.py             # SSE Streaming Chat Router
+│   │   │   └── sessions.py         # Chat-History & Session REST Router
 │   │   ├── core/
-│   │   │   ├── config.py           # Pydantic v2 BaseSettings singleton
-│   │   │   ├── dependencies.py     # FastAPI dependency injection container
-│   │   │   └── logging.py          # Structured structlog configuration
+│   │   │   ├── config.py           # Pydantic v2 Settings (Typ-sicher)
+│   │   │   ├── dependencies.py     # FastAPI Dependency Injection
+│   │   │   └── logging.py          # Strukturiertes structlog JSON-Logging
+│   │   ├── db/
+│   │   │   ├── models.py           # SQLAlchemy 2.0 ORM (ChatSession, ChatMessage)
+│   │   │   ├── database.py         # Async SQLite Engine (aiosqlite)
+│   │   │   └── repository.py       # Session & Message Data-Access Layer
 │   │   ├── schemas/
-│   │   │   ├── upload.py           # Ingestion request/response models
-│   │   │   └── chat.py             # Query models & SSE stream event schemas
+│   │   │   ├── upload.py           # Ingestion Request/Response Schemas
+│   │   │   ├── chat.py             # Chat Query & SSE Event Schemas
+│   │   │   └── session.py          # Session & History Schemas
 │   │   ├── services/
-│   │   │   ├── ingestion.py        # PDF parsing, splitting & upsert logic
-│   │   │   └── rag.py              # Hybrid retrieval & LCEL execution chain
-│   │   └── main.py                 # Application factory & lifespan lifecycle
+│   │   │   ├── ingestion.py        # PDF Parsing (pypdf), Splitter & Qdrant Upsert
+│   │   │   ├── reranker.py         # Cross-Encoder Re-Ranking (HuggingFace)
+│   │   │   └── rag.py              # Hybrid Retrieval, Re-Ranking & LCEL Execution
+│   │   └── main.py                 # FastAPI Application Factory & Lifespan
 │   ├── tests/
-│   │   ├── conftest.py             # Mock fixtures for vector store & LLM
-│   │   ├── test_upload.py          # Ingestion validation & error handling tests
-│   │   ├── test_rag.py             # Retrieval, formatting & deduplication tests
-│   │   └── test_chat.py            # Streaming endpoint & contract tests
-│   ├── Dockerfile                  # Multi-stage build (python:3.11-slim)
-│   ├── pyproject.toml              # Ruff, Mypy & Pytest configurations
-│   └── requirements.txt            # Pinned dependency manifest
+│   │   ├── conftest.py             # Pytest Fixtures & Mocks
+│   │   ├── test_upload.py          # Upload-Validierungstests
+│   │   ├── test_rag.py             # Retrieval-, Deduplizierungs- & Streamingtests
+│   │   ├── test_chat.py            # Chat-Vertragstests (SSE)
+│   │   └── test_sessions.py        # Session- und Persistenztests
+│   ├── Dockerfile                  # Multi-Stage Build (python:3.11-slim)
+│   └── requirements.txt            # Fixierte Abhängigkeiten
 ├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── globals.css         # Tailwind & layout directives
-│   │   │   ├── layout.tsx          # Root layout with font definitions
-│   │   │   └── page.tsx            # Main two-column application view
+│   │   │   ├── layout.tsx          # Root Layout mit Metadaten & Theme Support
+│   │   │   ├── globals.css         # Achromatische Scrollbars & Focus-Styles
+│   │   │   └── page.tsx            # 3-Spalten-Layout (Verlauf | Dokumente | Chat)
 │   │   ├── components/
-│   │   │   ├── ui/                 # Reusable buttons, badges, loaders
-│   │   │   ├── ChatInterface.tsx   # Chat transcript, input area & stream reader
-│   │   │   ├── DocumentManager.tsx # Drag-and-drop file upload & document list
-│   │   │   ├── MessageBubble.tsx   # Markdown renderer with code highlighting
-│   │   │   └── SourceModal.tsx     # Context excerpt inspector
+│   │   │   ├── SessionSidebar.tsx  # Chat-Verlauf mit Session-Switching & "Neuer Chat"
+│   │   │   ├── DocumentManager.tsx # Drag & Drop PDF-Upload & Statusliste
+│   │   │   ├── ChatInterface.tsx   # SSE Stream Reader & Prompt Input
+│   │   │   ├── MessageBubble.tsx   # Markdown Renderer & Quellen-Badges
+│   │   │   ├── SourceModal.tsx     # Quelltext-Ausschnitt Inspector
+│   │   │   ├── ThemeToggle.tsx     # Dark- / Light-Mode Switcher
+│   │   │   └── ui/                 # Wiederverwendbare UI-Komponenten (Button, Badge)
 │   │   ├── lib/
-│   │   │   ├── api.ts              # Typed API communication client
-│   │   │   ├── sse.ts              # ReadableStream SSE buffer parser
-│   │   │   └── utils.ts            # Formatting & class merging utilities
-│   │   └── types/                  # TypeScript interfaces mirroring backend schemas
-│   ├── Dockerfile                  # Multi-stage standalone build (node:20-alpine)
-│   ├── next.config.mjs             # Standalone output & upstream proxy rewrites
+│   │   │   ├── api.ts              # Typisierter API Client (Fetch)
+│   │   │   ├── sse.ts              # SSE ReadableStream Event Parser
+│   │   │   └── utils.ts            # Formatting Utilities
+│   │   └── types/                  # TypeScript Interfaces
+│   ├── Dockerfile                  # Next.js Standalone Build
 │   └── package.json
-├── .github/workflows/ci.yml         # CI pipeline (lint, test, build, smoke)
-├── docker-compose.yml              # Multi-container orchestration (Qdrant, API, Web)
-├── .env.example                    # Documented configuration template
+├── docker-compose.yml              # Multi-Container Setup (Qdrant, Backend, Frontend)
+├── .env.example                    # Konfigurationsvorlage
 └── README.md
 ```
 
 ---
 
-## Quickstart
+## Schnellstart
 
-### Prerequisites
-- Docker Engine & Docker Compose
-- (Optional for local inference) [Ollama](https://ollama.com/) with downloaded models:
+### Voraussetzungen
+- Docker Desktop / Docker Engine & Docker Compose
+- [Ollama](https://ollama.com/) installiert und gestartet mit den Modellen:
   ```bash
-  ollama run llama3
+  ollama pull llama3
   ollama pull nomic-embed-text
   ```
 
-### 1. Environment Configuration
+### 1. Konfiguration
 ```bash
 git clone https://github.com/your-username/hannes-ai.git
 cd hannes-ai
@@ -171,123 +183,32 @@ cd hannes-ai
 cp .env.example .env
 ```
 
-The default `.env` is configured for local Ollama usage. If you prefer OpenAI, update:
-```env
-LLM_PROVIDER=openai
-OPENAI_API_KEY=your-api-key-here
-LLM_MODEL=gpt-4o-mini
-EMBEDDING_MODEL=text-embedding-3-small
-EMBEDDING_DIMENSIONS=1536
-```
-
-### 2. Start Services
+### 2. Container starten
 ```bash
 docker compose up --build -d
 ```
 
-Service endpoints:
-- **Web UI:** [http://localhost:3000](http://localhost:3000)
-- **Backend API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+### 3. Zugriff
+- **Web-Interface:** [http://localhost:3000](http://localhost:3000)
+- **FastAPI Swagger Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Qdrant Dashboard:** [http://localhost:6333/dashboard](http://localhost:6333/dashboard)
-- **Health Endpoint:** [http://localhost:8000/health](http://localhost:8000/health)
+- **Health Check:** [http://localhost:8000/health](http://localhost:8000/health)
 
 ---
 
-## Local Development (Without Docker)
-
-<details>
-<summary>Click to view manual setup instructions</summary>
-
-### 1. Start Qdrant
-```bash
-docker run -p 6333:6333 -p 6334:6334 -v qdrant_storage:/qdrant/storage qdrant/qdrant:v1.11.3
-```
-
-### 2. Start Backend
-```bash
-cd backend
-python -m venv .venv
-
-# Linux / macOS:
-source .venv/bin/activate
-# Windows:
-.venv\Scripts\activate
-
-pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 3. Start Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
-</details>
-
----
-
-## API Reference
-
-### `POST /api/v1/upload`
-Uploads and indexes a PDF document into the vector database.
-- **Content-Type:** `multipart/form-data`
-- **Body:** `file` (Binary PDF payload, max 50 MB)
-- **Response:**
-  ```json
-  {
-    "success": true,
-    "message": "'annual_report.pdf' successfully indexed (24 chunks, 8 pages).",
-    "document": {
-      "document_id": "a8f3b2c1...",
-      "filename": "annual_report.pdf",
-      "total_pages": 8,
-      "total_chunks": 24,
-      "collection_name": "hannes_chunks"
-    }
-  }
-  ```
-
-### `POST /api/v1/chat`
-Executes hybrid retrieval and streams the LLM response via SSE.
-- **Content-Type:** `application/json`
-- **Body:**
-  ```json
-  {
-    "question": "What were the quarterly revenue drivers?"
-  }
-  ```
-- **Stream Events:**
-  ```text
-  data: {"type":"token","content":"Revenue"}
-  data: {"type":"token","content":" grew"}
-  data: {"type":"token","content":" by 18%"}
-  data: {"type":"sources","sources":[{"document_id":"a8f3...","filename":"annual_report.pdf","page_number":3,"chunk_index":1,"snippet":"Total revenue increased 18% driven by...","relevance_score":0.89}]}
-  data: {"type":"done"}
-  ```
-
----
-
-## Testing & Code Quality
-
-The backend contains automated tests verifying ingestion boundary conditions, retrieval mechanics, and streaming lifecycle with mocked model calls:
+## Tests & Code-Qualität
 
 ```bash
+# Backend Tests mit Pytest
 cd backend
 pytest tests/ -v
-```
 
-Linting and type checking:
-```bash
-# Backend
-ruff check app/ tests/
-
-# Frontend
+# TypeScript Type-Check
 cd frontend
 npm run type-check
 ```
 
 ---
 
-## License
-MIT License. See `LICENSE` for details.
+## Lizenz
+MIT License.

@@ -10,9 +10,11 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_qdrant import QdrantVectorStore
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.logging import get_logger
+from app.db.repository import SessionRepository
 from app.schemas.chat import (
     Source,
     StreamDoneEvent,
@@ -20,6 +22,7 @@ from app.schemas.chat import (
     StreamSourcesEvent,
     StreamTokenEvent,
 )
+from app.services.reranker import rerank_documents
 
 logger = get_logger(__name__)
 
@@ -33,7 +36,7 @@ Operational constraints:
 4. Maintain concise, structured markdown formatting (lists, bold key terms, tables if appropriate).
 5. Respond in the language used in the user's inquiry (defaulting to German when addressed in German).
 
-Context:
+{history_block}Context:
 {context}
 """
 
@@ -141,13 +144,38 @@ async def build_hybrid_retriever(
     )
 
 
+async def _build_history_block(session_id: str, db: AsyncSession) -> str:
+    repo = SessionRepository(db)
+    messages = await repo.get_messages(session_id)
+    recent = messages[-6:] if len(messages) > 6 else messages
+    if not recent:
+        return ""
+
+    lines: list[str] = ["Previous conversation (for context only — do not cite):\n"]
+    for msg in recent:
+        prefix = "User" if msg.role == "user" else "Assistant"
+        lines.append(f"{prefix}: {msg.content}")
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 async def stream_rag_response(
     *,
     question: str,
     vector_store: QdrantVectorStore,
     llm: BaseChatModel,
     settings: Settings,
+    session_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
+    history_block = ""
+    if session_id:
+        try:
+            from app.db.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                history_block = await _build_history_block(session_id, session)
+        except Exception as exc:
+            logger.error("failed_to_build_history_block", error=str(exc), session_id=session_id)
+
     try:
         retriever = await build_hybrid_retriever(
             vector_store=vector_store,
@@ -159,28 +187,45 @@ async def stream_rag_response(
         yield _format_sse(StreamErrorEvent(message=f"Retrieval failed: {exc}"))
         return
 
+    retrieved_docs = await rerank_documents(question, retrieved_docs, top_k=settings.reranker_top_k)
+
     if not retrieved_docs:
-        yield _format_sse(
-            StreamTokenEvent(
-                content="Das kann ich den bereitgestellten Dokumenten nicht entnehmen. "
-                "Bitte lade zuerst relevante Dokumente hoch."
-            )
+        fallback_msg = (
+            "Das kann ich den bereitgestellten Dokumenten nicht entnehmen. "
+            "Bitte lade zuerst relevante Dokumente hoch."
         )
+        yield _format_sse(StreamTokenEvent(content=fallback_msg))
         yield _format_sse(StreamSourcesEvent(sources=[]))
         yield _format_sse(StreamDoneEvent())
+
+        if session_id:
+            try:
+                from app.db.database import AsyncSessionLocal
+                async with AsyncSessionLocal() as session:
+                    repo = SessionRepository(session)
+                    await repo.add_message(session_id, role="user", content=question)
+                    await repo.add_message(session_id, role="assistant", content=fallback_msg, sources=[])
+                    logger.info("persisted_fallback_chat_exchange", session_id=session_id)
+            except Exception as exc:
+                logger.error("failed_to_persist_fallback_message", error=str(exc), session_id=session_id)
         return
 
     context = _format_context_documents(retrieved_docs)
     chain = (
-        RunnablePassthrough.assign(context=lambda _: context)
+        RunnablePassthrough.assign(
+            context=lambda _: context,
+            history_block=lambda _: history_block,
+        )
         | PROMPT_TEMPLATE
         | llm
         | StrOutputParser()
     )
 
+    full_response: list[str] = []
     try:
         async for token in chain.astream({"question": question}):
             if token:
+                full_response.append(token)
                 yield _format_sse(StreamTokenEvent(content=token))
     except Exception as exc:
         logger.error("generation_stream_interrupted", error=str(exc))
@@ -190,6 +235,22 @@ async def stream_rag_response(
     sources = _extract_source_attribution(retrieved_docs)
     yield _format_sse(StreamSourcesEvent(sources=sources))
     yield _format_sse(StreamDoneEvent())
+
+    if session_id:
+        try:
+            from app.db.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                repo = SessionRepository(session)
+                await repo.add_message(session_id, role="user", content=question)
+                await repo.add_message(
+                    session_id,
+                    role="assistant",
+                    content="".join(full_response),
+                    sources=sources,
+                )
+                logger.info("persisted_chat_exchange", session_id=session_id)
+        except Exception as exc:
+            logger.error("failed_to_persist_chat_message", error=str(exc), session_id=session_id)
 
 
 def _format_sse(event: StreamTokenEvent | StreamSourcesEvent | StreamErrorEvent | StreamDoneEvent) -> str:
