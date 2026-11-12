@@ -177,7 +177,7 @@ hannes-ai/
 
 ### 1. Konfiguration
 ```bash
-git clone https://github.com/your-username/hannes-ai.git
+git clone https://github.com/Hannes-Hu/Hannes-AI.git
 cd hannes-ai
 
 cp .env.example .env
