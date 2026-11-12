@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Hannes AI",
-        description="Enterprise hybrid RAG platform with dense vector retrieval, sparse keyword search, and streaming source attribution.",
+        description="Production hybrid RAG platform with dense vector retrieval, sparse keyword search, cross-encoder re-ranking, and streaming source attribution.",
         version="1.0.0",
         docs_url="/docs",
         redoc_url="/redoc",

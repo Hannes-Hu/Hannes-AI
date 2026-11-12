@@ -26,7 +26,7 @@ from app.services.reranker import rerank_documents
 
 logger = get_logger(__name__)
 
-SYSTEM_PROMPT = """You are Hannes, an enterprise-grade document intelligence assistant.
+SYSTEM_PROMPT = """You are Hannes, a document intelligence assistant.
 
 Operational constraints:
 1. Ground answers strictly and exclusively in the provided context documents.

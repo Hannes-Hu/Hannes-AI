@@ -8,21 +8,21 @@
 [![Ollama](https://img.shields.io/badge/Ollama-Local_Inference-black.svg?logo=ollama&logoColor=white)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Hannes AI ist eine produktionsreife Enterprise Retrieval-Augmented Generation (RAG) Plattform für präzise Frage-Antwort-Systeme auf Basis von Dokumenten (PDFs). Sie kombiniert dichte Vektorsuche (Cosine) mit lexikalischer Keyword-Suche (BM25), wendet ein lokales Cross-Encoder Re-Ranking (`ms-marco-MiniLM-L-6-v2`) an, streamt Antworten Wort für Wort via Server-Sent Events (SSE) und persistiert Chat-Sitzungen und Quellenangaben in einer lokalen SQLite-Datenbank.
+Hannes AI is a production-grade Retrieval-Augmented Generation (RAG) platform designed for high-accuracy document intelligence and question-answering over PDF documents. It merges dense vector search (Cosine) with lexical keyword matching (BM25), applies local Cross-Encoder re-ranking (`ms-marco-MiniLM-L-6-v2`), streams answers token-by-token over Server-Sent Events (SSE), and persists chat sessions and source citations in a local SQLite database.
 
-Das System läuft zu 100 % lokal ohne externe Cloud-Abhängigkeiten (Ollama `llama3` + `nomic-embed-text`, lokaler Cross-Encoder, lokales Qdrant). Über Dependency Injection kann bei Bedarf nahtlos auf OpenAI gewechselt werden.
+The entire stack runs 100% locally with zero cloud API dependencies (Ollama `llama3` + `nomic-embed-text`, local Cross-Encoder, and local Qdrant). Pluggable dependency injection allows switching to external providers (e.g., OpenAI) via environment configuration.
 
 ---
 
-## Architektur
+## Architecture
 
 ```mermaid
 flowchart TD
     subgraph Client["Frontend Layer (Next.js 14 App Router / TypeScript)"]
-        Sidebar["Session-Verlauf (SessionSidebar: Neuer Chat)"]
-        UploadZone["Dokumenten-Manager (Drag & Drop)"]
+        Sidebar["Session History (SessionSidebar: New Chat)"]
+        UploadZone["Document Manager (Drag & Drop)"]
         ChatInterface["Streaming Chat Interface"]
-        SourceModal["Quellen-Inspektor (Modal)"]
+        SourceModal["Source Inspector (Modal)"]
         Theme["Theme Toggle (Dark / Light)"]
     end
 
@@ -34,30 +34,30 @@ flowchart TD
     end
 
     subgraph Ingestion["Ingestion Engine"]
-        Parser["pypdf Stream Extraktion"]
+        Parser["pypdf Stream Extraction"]
         Chunker["RecursiveCharacterTextSplitter\n(1000 Chars, 200 Overlap)"]
-        Hasher["SHA-256 Idempotenz-Hash"]
+        Hasher["SHA-256 Idempotency Hash"]
     end
 
     subgraph Retrieval["Hybrid RAG & Re-Ranking"]
-        BM25["BM25 Keyword Search\n(Exakte Fachbegriffe & IDs)"]
-        QdrantRetriever["Qdrant Vector Search\n(Semantische Ähnlichkeit)"]
-        Ensemble["EnsembleRetriever\n(60% Vektor, 40% BM25)"]
+        BM25["BM25 Keyword Search\n(Exact Terms & IDs)"]
+        QdrantRetriever["Qdrant Vector Search\n(Semantic Similarity)"]
+        Ensemble["EnsembleRetriever\n(60% Vector, 40% BM25)"]
         Reranker["Cross-Encoder Re-Ranking\n(ms-marco-MiniLM-L-6-v2 → Top 4)"]
         LCEL["LangChain LCEL Pipeline\nRunnablePassthrough | Prompt | LLM"]
     end
 
-    subgraph Persistence["Speicher & Inferenz"]
+    subgraph Persistence["Storage & Inference"]
         Qdrant[("Qdrant Vector DB\n(Collection: hannes_chunks)")]
         SQLite[("SQLite DB (aiosqlite)\nSessions & Messages")]
         InferenceEngine["LLM Engine\n(Ollama / OpenAI)"]
     end
 
-    Sidebar -->|"Sessions laden & wechseln"| SessionsEndpoint
-    UploadZone -->|"PDF Multipart-Upload"| UploadEndpoint
+    Sidebar -->|"Load & switch sessions"| SessionsEndpoint
+    UploadZone -->|"PDF multipart upload"| UploadEndpoint
     UploadEndpoint --> Parser --> Chunker --> Hasher --> Qdrant
 
-    ChatInterface -->|"Frage + session_id"| ChatEndpoint
+    ChatInterface -->|"Question + session_id"| ChatEndpoint
     ChatEndpoint --> Ensemble
     Ensemble --> QdrantRetriever & BM25
     QdrantRetriever --> Qdrant
@@ -65,150 +65,151 @@ flowchart TD
     Reranker -->|"Top 4 Re-Ranked Chunks"| LCEL
     LCEL --> InferenceEngine
     InferenceEngine -->|"Token Stream (SSE)"| ChatInterface
-    ChatEndpoint -->|"Verlauf persistieren"| SQLite
+    ChatEndpoint -->|"Persist exchange"| SQLite
     SessionsEndpoint --> SQLite
-    ChatInterface -->|"Quellen-Auszug ansehen"| SourceModal
+    ChatInterface -->|"Inspect source snippet"| SourceModal
 ```
 
 ---
 
-## Zentrale technische Entscheidungen
+## Technical Highlights
 
-### 1. Hybrid Retrieval & Lokales Cross-Encoder Re-Ranking
-Reine semantische Vektorsuche scheitert häufig bei exakten Artikelnummern, Paragraphen oder fachspezifischen Begriffen. Hannes AI löst dies zweistufig:
-- **Stufe 1 (Hybrid Retrieval):** `EnsembleRetriever` kombiniert dichte Embeddings (`nomic-embed-text`, 768-dim) in Qdrant mit sparse BM25 (`rank_bm25`).
-- **Stufe 2 (Cross-Encoder Re-Ranking):** Ein lokales HuggingFace Cross-Encoder Modell (`cross-encoder/ms-marco-MiniLM-L-6-v2` via `sentence-transformers`) bewertet jedes `(Frage, Textauszug)`-Paar gemeinsam und filtert die Top-6 Kandidaten auf die 4 relevantesten Abschnitte herunter.
+### 1. Hybrid Retrieval & Local Cross-Encoder Re-Ranking
+Pure vector search frequently struggles with domain terms, serial numbers, and legal codes. Hannes AI addresses this through a two-stage retrieval pipeline:
+- **Stage 1 (Hybrid Search):** `EnsembleRetriever` combines dense semantic vectors (`nomic-embed-text`, 768-dim) in Qdrant with sparse BM25 scoring (`rank_bm25`).
+- **Stage 2 (Cross-Encoder Re-Ranking):** A local HuggingFace Cross-Encoder model (`cross-encoder/ms-marco-MiniLM-L-6-v2` via `sentence-transformers`) scores each `(query, document_passage)` pair jointly, pruning the candidate set down to the top 4 most relevant excerpts before prompt construction.
 
-### 2. Chat-History & Asynchrone Persistenz
-- Speicherung aller Sessions und Nachrichten in SQLite über SQLAlchemy 2.0 (`aiosqlite`) mit `selectinload` und strikt typisierten Mappings (`Mapped[...]`, `mapped_column[...]`).
-- Historie wird beim Chatten automatisch in den System-Prompt injiziert (letzte Nachrichten), damit mehrstufige Rückfragen beantwortet werden können.
-- Automatische Titelgenerierung der Session anhand der ersten Benutzerfrage.
-- Saubere Session-Isolation: Neuer Chat wird per Klick auf **"Neuer Chat"** angelegt.
+### 2. Multi-Turn Session Persistence
+- Chat sessions and messages are persisted asynchronously in SQLite via SQLAlchemy 2.0 (`aiosqlite`) using `selectinload` and strictly-typed column definitions (`Mapped[...]`, `mapped_column[...]`).
+- Multi-turn conversational context is injected directly into the LLM system prompt for contextual follow-up inquiries.
+- Dynamic session title generation automatically labels the conversation based on the user's initial inquiry.
+- Dedicated session management with one-click **"Neuer Chat"** creation and instant history restoration.
 
 ### 3. Server-Sent Events (SSE) Streaming & Source Attribution
-- Unidirektionales HTTP-Streaming (`text/event-stream`) anstelle fehleranfälliger WebSockets.
-- Typisierte JSON-Frames:
-  - `{"type": "token", "content": "..."}`: Inkrementelle Token-Generierung.
-  - `{"type": "sources", "sources": [...]}`: Strukturierte Quellenangaben mit Dateiname, Seitenzahl, Relevanzscore und Originaltext.
-  - `{"type": "done"}`: Sauberer Abschluss des Streams.
+- Unidirectional HTTP streaming (`text/event-stream`) avoiding WebSocket lifecycle complexity.
+- Strongly-typed JSON stream frames:
+  - `{"type": "token", "content": "..."}`: Real-time incremental token delivery.
+  - `{"type": "sources", "sources": [...]}`: Structured citations with document filename, page number, relevance score, and text excerpt.
+  - `{"type": "done"}`: Clean stream termination indicator.
 
-### 4. 100 % Lokal & Vendor-agnostisch
-- **Standard:** Vollständig offline lauffähig mit Ollama (`llama3` + `nomic-embed-text`), Qdrant im Docker-Container und lokalem Cross-Encoder.
-- **Optional:** Umschaltbar auf OpenAI (`gpt-4o-mini` + `text-embedding-3-small`) durch einfaches Setzen von `LLM_PROVIDER=openai` in `.env`.
+### 4. 100% Local Execution & Pluggable Providers
+- **Default:** Fully offline execution powered by Ollama (`llama3` + `nomic-embed-text`), containerized Qdrant, and local sentence-transformers inference.
+- **Configurable:** Fast switching to OpenAI (`gpt-4o-mini` + `text-embedding-3-small`) by updating `LLM_PROVIDER=openai` in `.env`.
 
-### 5. Neutrales Schwarz-Grau UI mit Dark/Light Toggle
-- Konsequent gestaltetes Enterprise-Interface mit 3-Spalten-Layout (Chat-Verlauf, Dokumentenverwaltung, Chatbereich).
-- Achromatische Farbpalette (`neutral` ohne Blaustich) und Theme-Umschaltung mit Persistenz.
+### 5. Achromatic Dark/Light Interface
+- Purpose-built three-column layout (Session History, Document Management, Streaming Chat).
+- Strictly achromatic palette (Tailwind `neutral` scale with identical R/G/B values) eliminating blue/tint bias.
+- Fully persistent Dark / Light mode toggle.
 
 ---
 
-## Projektstruktur
+## Project Structure
 
 ```text
 hannes-ai/
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/
-│   │   │   ├── upload.py           # PDF Upload & Chunking Ingestion Router
-│   │   │   ├── chat.py             # SSE Streaming Chat Router
-│   │   │   └── sessions.py         # Chat-History & Session REST Router
+│   │   │   ├── upload.py           # Multipart PDF ingestion & chunking router
+│   │   │   ├── chat.py             # SSE streaming chat router
+│   │   │   └── sessions.py         # Session management & history REST router
 │   │   ├── core/
-│   │   │   ├── config.py           # Pydantic v2 Settings (Typ-sicher)
-│   │   │   ├── dependencies.py     # FastAPI Dependency Injection
-│   │   │   └── logging.py          # Strukturiertes structlog JSON-Logging
+│   │   │   ├── config.py           # Type-safe Pydantic v2 settings
+│   │   │   ├── dependencies.py     # FastAPI dependency injection
+│   │   │   └── logging.py          # Structured structlog JSON logging
 │   │   ├── db/
 │   │   │   ├── models.py           # SQLAlchemy 2.0 ORM (ChatSession, ChatMessage)
-│   │   │   ├── database.py         # Async SQLite Engine (aiosqlite)
-│   │   │   └── repository.py       # Session & Message Data-Access Layer
+│   │   │   ├── database.py         # Async SQLite engine (aiosqlite)
+│   │   │   └── repository.py       # Session & message data-access repository
 │   │   ├── schemas/
-│   │   │   ├── upload.py           # Ingestion Request/Response Schemas
-│   │   │   ├── chat.py             # Chat Query & SSE Event Schemas
-│   │   │   └── session.py          # Session & History Schemas
+│   │   │   ├── upload.py           # Ingestion request & response schemas
+│   │   │   ├── chat.py             # Chat request & SSE event schemas
+│   │   │   └── session.py          # Session & message response schemas
 │   │   ├── services/
-│   │   │   ├── ingestion.py        # PDF Parsing (pypdf), Splitter & Qdrant Upsert
-│   │   │   ├── reranker.py         # Cross-Encoder Re-Ranking (HuggingFace)
-│   │   │   └── rag.py              # Hybrid Retrieval, Re-Ranking & LCEL Execution
-│   │   └── main.py                 # FastAPI Application Factory & Lifespan
+│   │   │   ├── ingestion.py        # PDF extraction (pypdf), splitting & Qdrant upsert
+│   │   │   ├── reranker.py         # Local Cross-Encoder re-ranking service
+│   │   │   └── rag.py              # Hybrid retrieval, re-ranking & LCEL execution
+│   │   └── main.py                 # FastAPI application factory & lifespan
 │   ├── tests/
-│   │   ├── conftest.py             # Pytest Fixtures & Mocks
-│   │   ├── test_upload.py          # Upload-Validierungstests
-│   │   ├── test_rag.py             # Retrieval-, Deduplizierungs- & Streamingtests
-│   │   ├── test_chat.py            # Chat-Vertragstests (SSE)
-│   │   └── test_sessions.py        # Session- und Persistenztests
-│   ├── Dockerfile                  # Multi-Stage Build (python:3.11-slim)
-│   └── requirements.txt            # Fixierte Abhängigkeiten
+│   │   ├── conftest.py             # Pytest fixtures & mocks
+│   │   ├── test_upload.py          # Upload validation tests
+│   │   ├── test_rag.py             # Retrieval, deduplication & streaming tests
+│   │   ├── test_chat.py            # Chat SSE contract tests
+│   │   └── test_sessions.py        # Session persistence integration tests
+│   ├── Dockerfile                  # Multi-stage container build (python:3.11-slim)
+│   └── requirements.txt            # Pinned Python dependencies
 ├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── layout.tsx          # Root Layout mit Metadaten & Theme Support
-│   │   │   ├── globals.css         # Achromatische Scrollbars & Focus-Styles
-│   │   │   └── page.tsx            # 3-Spalten-Layout (Verlauf | Dokumente | Chat)
+│   │   │   ├── layout.tsx          # Root layout & theme configuration
+│   │   │   ├── globals.css         # Achromatic scrollbars & focus styles
+│   │   │   └── page.tsx            # Three-column layout (Sidebar | Documents | Chat)
 │   │   ├── components/
-│   │   │   ├── SessionSidebar.tsx  # Chat-Verlauf mit Session-Switching & "Neuer Chat"
-│   │   │   ├── DocumentManager.tsx # Drag & Drop PDF-Upload & Statusliste
-│   │   │   ├── ChatInterface.tsx   # SSE Stream Reader & Prompt Input
-│   │   │   ├── MessageBubble.tsx   # Markdown Renderer & Quellen-Badges
-│   │   │   ├── SourceModal.tsx     # Quelltext-Ausschnitt Inspector
-│   │   │   ├── ThemeToggle.tsx     # Dark- / Light-Mode Switcher
-│   │   │   └── ui/                 # Wiederverwendbare UI-Komponenten (Button, Badge)
+│   │   │   ├── SessionSidebar.tsx  # Chat history with session switching & "Neuer Chat"
+│   │   │   ├── DocumentManager.tsx # Drag & Drop PDF upload & document list
+│   │   │   ├── ChatInterface.tsx   # SSE stream reader & prompt input
+│   │   │   ├── MessageBubble.tsx   # Markdown renderer & source badges
+│   │   │   ├── SourceModal.tsx     # Source citation inspection modal
+│   │   │   ├── ThemeToggle.tsx     # Dark / Light theme switcher
+│   │   │   └── ui/                 # Reusable UI primitives (Button, Badge)
 │   │   ├── lib/
-│   │   │   ├── api.ts              # Typisierter API Client (Fetch)
-│   │   │   ├── sse.ts              # SSE ReadableStream Event Parser
-│   │   │   └── utils.ts            # Formatting Utilities
-│   │   └── types/                  # TypeScript Interfaces
-│   ├── Dockerfile                  # Next.js Standalone Build
+│   │   │   ├── api.ts              # Typed API client
+│   │   │   ├── sse.ts              # SSE ReadableStream event parser
+│   │   │   └── utils.ts            # Formatting utilities
+│   │   └── types/                  # TypeScript interface definitions
+│   ├── Dockerfile                  # Next.js standalone container build
 │   └── package.json
-├── docker-compose.yml              # Multi-Container Setup (Qdrant, Backend, Frontend)
-├── .env.example                    # Konfigurationsvorlage
+├── docker-compose.yml              # Multi-container orchestration (Qdrant, Backend, Frontend)
+├── .env.example                    # Configuration template
 └── README.md
 ```
 
 ---
 
-## Schnellstart
+## Quickstart
 
-### Voraussetzungen
+### Prerequisites
 - Docker Desktop / Docker Engine & Docker Compose
-- [Ollama](https://ollama.com/) installiert und gestartet mit den Modellen:
+- [Ollama](https://ollama.com/) running locally with the required models:
   ```bash
   ollama pull llama3
   ollama pull nomic-embed-text
   ```
 
-### 1. Konfiguration
+### 1. Configuration
 ```bash
-git clone https://github.com/Hannes-Hu/Hannes-AI.git
+git clone https://github.com/your-username/hannes-ai.git
 cd hannes-ai
 
 cp .env.example .env
 ```
 
-### 2. Container starten
+### 2. Launch Services
 ```bash
 docker compose up --build -d
 ```
 
-### 3. Zugriff
-- **Web-Interface:** [http://localhost:3000](http://localhost:3000)
-- **FastAPI Swagger Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+### 3. Application Access
+- **Web UI:** [http://localhost:3000](http://localhost:3000)
+- **FastAPI OpenAPI Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Qdrant Dashboard:** [http://localhost:6333/dashboard](http://localhost:6333/dashboard)
 - **Health Check:** [http://localhost:8000/health](http://localhost:8000/health)
 
 ---
 
-## Tests & Code-Qualität
+## Verification & Code Quality
 
 ```bash
-# Backend Tests mit Pytest
+# Run backend test suite
 cd backend
 pytest tests/ -v
 
-# TypeScript Type-Check
+# Run frontend type checking
 cd frontend
 npm run type-check
 ```
 
 ---
 
-## Lizenz
+## License
 MIT License.

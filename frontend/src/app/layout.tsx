@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   title: "Hannes AI — RAG-Plattform",
   description:
     "Präzise Frage-Antwort-Plattform mit lokaler Hybrid-Suche, Cross-Encoder Re-Ranking und exakter Quellenattribution.",
-  keywords: ["RAG", "KI", "Dokumente", "PDF", "Enterprise"],
+  keywords: ["RAG", "KI", "Dokumente", "PDF", "Search"],
   authors: [{ name: "Hannes AI" }],
   robots: "noindex, nofollow",
 };

@@ -118,7 +118,7 @@ class TestStreamRagResponse:
     async def test_stream_emits_tokens_and_sources(self, test_settings: Settings) -> None:
         mock_docs = [
             Document(
-                page_content="HannesAI is an enterprise knowledge platform.",
+                page_content="HannesAI is a document intelligence platform.",
                 metadata={
                     "document_id": "doc1",
                     "filename": "intro.pdf",
@@ -140,7 +140,7 @@ class TestStreamRagResponse:
                 mock_chain = MagicMock()
 
                 async def fake_chain_stream(inp: dict) -> AsyncGenerator[str, None]:
-                    for token in ["Enterprise ", "response."]:
+                    for token in ["Accurate ", "response."]:
                         yield token
 
                 mock_chain.astream = fake_chain_stream
