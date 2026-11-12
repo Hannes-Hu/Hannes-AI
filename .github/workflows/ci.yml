@@ -51,7 +51,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_TEST }}
           QDRANT_HOST: localhost
           QDRANT_PORT: 6333
-          QDRANT_COLLECTION_NAME: documind_test
+          QDRANT_COLLECTION_NAME: hannes_test
           LLM_MODEL: gpt-4o-mini
           EMBEDDING_MODEL: text-embedding-3-small
           EMBEDDING_DIMENSIONS: 1536
