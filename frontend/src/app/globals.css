@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Custom Properties ─────────────────────────────────────────────────────── */
+:root {
+  --scrollbar-track: rgb(15 23 42);
+  --scrollbar-thumb: rgb(51 65 85);
+  --scrollbar-thumb-hover: rgb(71 85 105);
+}
+
+/* ── Base Styles ────────────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+  scroll-behavior: smooth;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: rgb(2 6 23);  /* slate-950 */
+  color: rgb(226 232 240);         /* slate-200 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Custom Scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* ── Prose Overrides ────────────────────────────────────────────────────────── */
+.prose pre {
+  margin: 0.75rem 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.prose pre code {
+  background: rgb(15 23 42) !important;
+}
+
+/* ── Focus Ring ─────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid rgb(99 102 241);
+  outline-offset: 2px;
+  border-radius: 0.375rem;
+}
